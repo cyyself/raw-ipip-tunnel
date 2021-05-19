@@ -115,7 +115,6 @@ void recv_ipv4(unsigned char *packet,unsigned short len, int ipip) {
 	) {
 		return;//ignore ip not equals my_ip
 	}
-	printf("asdf\n");
 	unsigned short more_frag = ntohs(l3_header.frag_off) & more_frag_mask;
 	unsigned short frag_offset = (ntohs(l3_header.frag_off) & frag_offset_mask) << 3;
 	unsigned char *payload = packet + (l3_header.ihl << 2);
