@@ -13,19 +13,21 @@
 #include "cksum.c"
 
 char* bind_interface = "docker0";//use -l to change
-struct in_addr peer_ip;//use -ip to change
+struct in_addr my_ip,peer_ip,my_ipip,peer_ipip;//use -ip to change
+
 unsigned char peer_mac[6] = {0xff,0xff,0xff,0xff,0xff,0xff};//use -mac to change
 unsigned short my_port = 2333, peer_port = 2333;//use -b -p to change
 
-
-struct in_addr my_ip;
 unsigned char my_mac[6];
-unsigned short mtu = 1500;//you can even try 28
+unsigned short mtu_ip = 1500;//you can even try 28
+unsigned short mtu_ipip = 1480;//you can even try 28
 
 pthread_t receiver_thread;
 
 const unsigned short more_frag_mask= 0x2000;
 const unsigned short frag_offset_mask = 0x1fff;
+
+const unsigned char proto_ipip = 4;
 const unsigned char proto_udp = 17;
 #define buf_sz 65536
 #define max_frag_size 65536//actually supoort to 9000 Bytes jumbo frame is enough
@@ -142,6 +144,9 @@ void recv_ipv4(unsigned char *packet,unsigned short len) {
 		if (l3_header.protocol == proto_udp) {
 			recv_udp(payload,payloadlen);
 		}
+		else if (l3_header.protocol == proto_ipip) {
+			recv_ipv4(payload,payloadlen);
+		}
 	}
 }
 
@@ -192,9 +197,9 @@ void send_ip(struct in_addr dst_ip,unsigned char protocol,unsigned char *payload
 	l3_header.check = 0;
 	l3_header.saddr = my_ip.s_addr;
 	l3_header.daddr = dst_ip.s_addr;
-	if (len > mtu - (l3_header.ihl << 2)) {
+	if (len > mtu_ip - (l3_header.ihl << 2)) {
 		//do_fragment
-		int each_sz = lowbit_clear(mtu - (l3_header.ihl << 2),3);
+		int each_sz = lowbit_clear(mtu_ip - (l3_header.ihl << 2),3);
 		//try to send in reverse order to check frag is ok
 		for (int i=len-(len%each_sz==0?each_sz:len%each_sz);i>=0;i-=each_sz) {
 		//for (int i=0;i<len;i+=each_sz) {
@@ -215,6 +220,43 @@ void send_ip(struct in_addr dst_ip,unsigned char protocol,unsigned char *payload
 		send_eth(peer_mac,htons(ETH_P_IP),buf,len+20);
 	}
 }
+void send_ipip(struct in_addr dst_ip,struct in_addr dst_ipip,unsigned char protocol,unsigned char *payload,unsigned short len) {
+	char buf[buf_sz];
+	struct iphdr l3_header;
+	l3_header.version = 4;
+	l3_header.ihl = 5;
+	l3_header.tos = 0;
+	l3_header.tot_len = htons(len + (l3_header.ihl << 2));
+	l3_header.id = rand() & 0xffff;
+	l3_header.frag_off = 0;
+	l3_header.ttl = 64;
+	l3_header.protocol = protocol;
+	l3_header.check = 0;
+	l3_header.saddr = my_ipip.s_addr;
+	l3_header.daddr = dst_ipip.s_addr;
+	if (len > mtu_ipip - (l3_header.ihl << 2)) {
+		//do_fragment
+		int each_sz = lowbit_clear(mtu_ipip - (l3_header.ihl << 2),3);
+		//try to send in reverse order to check frag is ok
+		for (int i=len-(len%each_sz==0?each_sz:len%each_sz);i>=0;i-=each_sz) {
+		//for (int i=0;i<len;i+=each_sz) {
+			unsigned char more_frag = i + each_sz < len;
+			l3_header.tot_len = htons(20 + (more_frag ? each_sz : len - i));
+			l3_header.frag_off = htons((i >> 3) | (more_frag?more_frag_mask:0));
+			l3_header.check = 0;
+			l3_header.check = in_cksum(&l3_header,sizeof(l3_header));
+			memcpy(buf,&l3_header,sizeof(l3_header));
+			memcpy(buf+20,payload+i,(more_frag ? each_sz : len - i));
+			send_eth(peer_mac,htons(ETH_P_IP),buf,ntohs(l3_header.tot_len));
+		}
+	}
+	else {
+		l3_header.check = in_cksum(&l3_header,sizeof(l3_header));
+		memcpy(buf,&l3_header,sizeof(l3_header));
+		memcpy(buf+20,payload,len);
+		send_ip(dst_ip,proto_ipip,buf,len+20);
+	}
+}
 void send_udp(struct in_addr dst_ip,unsigned short src_port,unsigned short dst_port,char *payload,unsigned short len) {
 	char buf[buf_sz];
 	struct udphdr l4_header;
@@ -225,6 +267,17 @@ void send_udp(struct in_addr dst_ip,unsigned short src_port,unsigned short dst_p
 	memcpy(buf,&l4_header,sizeof(l4_header));
 	memcpy(buf+8,payload,len);
 	send_ip(dst_ip,proto_udp,buf,len+8);
+}
+void send_udp_ipip(struct in_addr dst_ip,struct in_addr dst_ipip,unsigned short src_port,unsigned short dst_port,char *payload,unsigned short len) {
+	char buf[buf_sz];
+	struct udphdr l4_header;
+	l4_header.source = htons(src_port);
+	l4_header.dest = htons(dst_port);
+	l4_header.check = 0;
+	l4_header.len = htons(len + 8);
+	memcpy(buf,&l4_header,sizeof(l4_header));
+	memcpy(buf+8,payload,len);
+	send_ipip(dst_ip,dst_ipip,proto_udp,buf,len+8);
 }
 char test_udp_payload[3000];
 void init_test_udp_payload() {
@@ -250,13 +303,16 @@ void sender() {
 	while (sz = getline(&buf_ptr,&buf_sz_t,stdin)) {
 		buf[sz-1] = 0;
 		sz --;
-		if (strcmp(buf,"testfrag") == 0) send_udp(peer_ip,my_port,peer_port,test_udp_payload,3000);
-		else send_udp(peer_ip,my_port,peer_port,buf,sz);
+		if (strcmp(buf,"testfrag") == 0) send_udp_ipip(peer_ip,peer_ipip,my_port,peer_port,test_udp_payload,3000);
+		else send_udp_ipip(peer_ip,peer_ipip,my_port,peer_port,buf,sz);
 	}
 }
 int main(int argc,char *argv[]) {
+	srand(time(NULL));
 	init_test_udp_payload();
 	inet_aton("172.17.255.255",&peer_ip);//default ip address
+	inet_aton("192.168.0.1",&my_ipip);
+	inet_aton("192.168.0.2",&peer_ipip);
 	//use -l to bind for specific interface
 	for (int i=0;i<argc;i++) if (i + 1 < argc) {
 		if (strcmp(argv[i],"-l") == 0) {
@@ -264,6 +320,12 @@ int main(int argc,char *argv[]) {
 		}
 		else if (!strcmp(argv[i],"-ip")) {
 			inet_aton(argv[i+1],&peer_ip);
+		}
+		else if (!strcmp(argv[i],"-myipip")) {
+			inet_aton(argv[i+1],&my_ipip);
+		}
+		else if (!strcmp(argv[i],"-peeripip")) {
+			inet_aton(argv[i+1],&peer_ipip);
 		}
 		else if (!strcmp(argv[i],"-mac")) {
 			read_mac_addr(argv[i+1],&peer_mac);
@@ -277,6 +339,8 @@ int main(int argc,char *argv[]) {
 	}
 	printf("bind_interface = %s\n",bind_interface);
 	printf("peer_ip = %s\n",inet_ntoa(peer_ip));
+	printf("my_ipip = %s\n",inet_ntoa(my_ipip));
+	printf("peer_ipip = %s\n",inet_ntoa(peer_ipip));
 	printf("peer_mac = ");
 	print_mac_addr(peer_mac);
 	printf("peer_udp_port = %hu\n",peer_port);
