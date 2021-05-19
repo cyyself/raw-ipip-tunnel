@@ -252,7 +252,7 @@ void send_ipip(struct in_addr dst_ip,struct in_addr dst_ipip,unsigned char proto
 			l3_header.check = in_cksum(&l3_header,sizeof(l3_header));
 			memcpy(buf,&l3_header,sizeof(l3_header));
 			memcpy(buf+20,payload+i,(more_frag ? each_sz : len - i));
-			send_eth(peer_mac,htons(ETH_P_IP),buf,ntohs(l3_header.tot_len));
+			send_ip(dst_ip,proto_ipip,buf,ntohs(l3_header.tot_len));
 		}
 	}
 	else {
