@@ -91,7 +91,7 @@ void recv_udp(unsigned char *payload,unsigned short len) {
 		//printf("bad udp size\n");
 	}
 }
-void recv_ipv4(unsigned char *packet,unsigned short len) {
+void recv_ipv4(unsigned char *packet,unsigned short len, int ipip) {
 	struct iphdr l3_header;
 	memcpy(&l3_header,packet,sizeof(l3_header));
 	struct in_addr saddr, daddr;
@@ -109,7 +109,13 @@ void recv_ipv4(unsigned char *packet,unsigned short len) {
 		//printf("header cksum error\n");
 		return;
 	}
-	if (daddr.s_addr != my_ip.s_addr || saddr.s_addr != peer_ip.s_addr) return;//ignore ip not equals my_ip
+	if (
+		(!ipip && (daddr.s_addr != my_ip.s_addr || saddr.s_addr != peer_ip.s_addr)) ||
+		(ipip && (daddr.s_addr != my_ipip.s_addr || saddr.s_addr != peer_ipip.s_addr))
+	) {
+		return;//ignore ip not equals my_ip
+	}
+	printf("asdf\n");
 	unsigned short more_frag = ntohs(l3_header.frag_off) & more_frag_mask;
 	unsigned short frag_offset = (ntohs(l3_header.frag_off) & frag_offset_mask) << 3;
 	unsigned char *payload = packet + (l3_header.ihl << 2);
@@ -145,7 +151,7 @@ void recv_ipv4(unsigned char *packet,unsigned short len) {
 			recv_udp(payload,payloadlen);
 		}
 		else if (l3_header.protocol == proto_ipip) {
-			recv_ipv4(payload,payloadlen);
+			recv_ipv4(payload,payloadlen,1);
 		}
 	}
 }
@@ -163,7 +169,7 @@ void recv_eth(unsigned char *frame,unsigned short len) {
 	switch (ntohs(l2_header.h_proto)) {
 		case ETH_P_IP:
 			//printf("IPv4\n");
-			recv_ipv4(frame+sizeof(l2_header),len-sizeof(l2_header));
+			recv_ipv4(frame+sizeof(l2_header),len-sizeof(l2_header),0);
 			break;
 		default:
 			//printf("unknow protocol %04x\n",ntohs(l2_header.h_proto));
