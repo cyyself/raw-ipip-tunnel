@@ -18,20 +18,20 @@
 using std::map;
 
 struct mac_addr {
-    unsigned char addr[6];
-    void print() {
-        for (int i=0;i<6;i++) printf("%02x%c",(unsigned char)addr[i],i==5?'\n':':');
-    }
-    mac_addr() {
-        memset(addr,0xff,sizeof(addr));
-    }
-    mac_addr(unsigned char* mac) {
-        memcpy(addr,mac,sizeof(addr));
-    }
-    friend bool operator == (const mac_addr &a, const mac_addr &b) {
-        for (int i=0;i<6;i++) if (a.addr[i] != b.addr[i]) return false;
-        return true;
-    }
+	unsigned char addr[6];
+	void print() {
+		for (int i=0;i<6;i++) printf("%02x%c",(unsigned char)addr[i],i==5?'\n':':');
+	}
+	mac_addr() {
+		memset(addr,0xff,sizeof(addr));
+	}
+	mac_addr(unsigned char* mac) {
+		memcpy(addr,mac,sizeof(addr));
+	}
+	friend bool operator == (const mac_addr &a, const mac_addr &b) {
+		for (int i=0;i<6;i++) if (a.addr[i] != b.addr[i]) return false;
+		return true;
+	}
 };
 
 char* bind_interface = "enp7s0";// use -l to change
@@ -126,20 +126,20 @@ void recv_ipv4(unsigned char *packet,unsigned short len,struct ethhdr *l2_header
 		debug();
 	}
 	*/
-    if (l2_header && (mac_addr(l2_header->h_dest) == mac_addr(my_mac) || daddr.s_addr == my_ip.s_addr) ) { // 学习源IP的MAC地址，这样就免去了ARP的实现
-        if ( (saddr.s_addr & left_net_mask.s_addr) == left_net.s_addr) {
-            // 发现是left net，学习地址
-            mac_addr_table[saddr.s_addr] = mac_addr(l2_header->h_source);
+	if (l2_header && (mac_addr(l2_header->h_dest) == mac_addr(my_mac) || daddr.s_addr == my_ip.s_addr) ) { // 学习源IP的MAC地址，这样就免去了ARP的实现
+		if ( (saddr.s_addr & left_net_mask.s_addr) == left_net.s_addr) {
+			// 发现是left net，学习地址
+			mac_addr_table[saddr.s_addr] = mac_addr(l2_header->h_source);
 			// printf("%s is at ",inet_ntoa(saddr));
 			// mac_addr_table[saddr.s_addr].print();
-        }
-        else if (saddr.s_addr == peer_ip.s_addr) {
-            // 发现是ipip路由器对端，学习地址
-            mac_addr_table[saddr.s_addr] = mac_addr(l2_header->h_source);
+		}
+		else if (saddr.s_addr == peer_ip.s_addr) {
+			// 发现是ipip路由器对端，学习地址
+			mac_addr_table[saddr.s_addr] = mac_addr(l2_header->h_source);
 			// printf("%s is at ",inet_ntoa(saddr));
 			// mac_addr_table[saddr.s_addr].print();
-        }
-    }
+		}
+	}
 	unsigned short more_frag = ntohs(l3_header.frag_off) & more_frag_mask;
 	unsigned short frag_offset = (ntohs(l3_header.frag_off) & frag_offset_mask) << 3;
 	unsigned char *payload = packet + (l3_header.ihl << 2);
@@ -162,33 +162,35 @@ void recv_ipv4(unsigned char *packet,unsigned short len,struct ethhdr *l2_header
 		if (!more_frag) frag_totlen[header_hash] = frag_offset + payloadlen;
 		if (frag_len && frag_len[header_hash] == frag_totlen[header_hash]) {
 			// printf("reassemble packet success\n");
-            if (l3_header.protocol == proto_ipip) {
-                recv_ipv4(frag_mem[header_hash],frag_totlen[header_hash],NULL);
-            }
+			if (l3_header.protocol == proto_ipip) {
+				recv_ipv4(frag_mem[header_hash],frag_totlen[header_hash],NULL);
+			}
 			frag_totlen[header_hash] = 0;
 			frag_len[header_hash] = 0;
 		}
 	}
 	else {
-        if (l3_header.protocol == proto_ipip) {
-            recv_ipv4(payload,payloadlen,NULL);
-        }
-        else if ( ( (saddr.s_addr & left_net_mask.s_addr) == left_net.s_addr) && ( (daddr.s_addr & right_net_mask.s_addr) == right_net.s_addr) && mac_addr(l2_header->h_dest) == mac_addr(my_mac)) {
-            // 表示来自left net，需要转发到right net
-            send_ipip(packet,len);
+		if (l3_header.protocol == proto_ipip) {
+			recv_ipv4(payload,payloadlen,NULL);
+		}
+		else if ( ( (saddr.s_addr & left_net_mask.s_addr) == left_net.s_addr) && ( (daddr.s_addr & right_net_mask.s_addr) == right_net.s_addr) && mac_addr(l2_header->h_dest) == mac_addr(my_mac)) {
+			// 表示来自left net，需要转发到right net
+			send_ipip(packet,len);
 			// printf("tx\n");
-        }
-        else if ( ( (saddr.s_addr & right_net_mask.s_addr) == right_net.s_addr) && ( (daddr.s_addr & left_net_mask.s_addr) == left_net.s_addr)) {
-            // 表示来自right net，需要转发到left net
-			l3_header.ttl --;
-			l3_header.check = 0;
-			l3_header.check = in_cksum((unsigned short *)&l3_header,sizeof(l3_header));
-			memcpy(packet,&l3_header,sizeof(l3_header));
-            send_eth(mac_addr_table[daddr.s_addr],htons(ETH_P_IP),packet,len);
+		}
+		else if ( ( (saddr.s_addr & right_net_mask.s_addr) == right_net.s_addr) && ( (daddr.s_addr & left_net_mask.s_addr) == left_net.s_addr)) {
+			// 表示来自right net，需要转发到left net
+			if (l3_header.ttl) {
+				l3_header.ttl --;
+				l3_header.check = 0;
+				l3_header.check = in_cksum((unsigned short *)&l3_header,sizeof(l3_header));
+				memcpy(packet,&l3_header,sizeof(l3_header));
+				send_eth(mac_addr_table[daddr.s_addr],htons(ETH_P_IP),packet,len);
+			}
 			// printf("rx\n");
-        }
+		}
 	}
-    return;
+	return;
 }
 
 
@@ -265,13 +267,15 @@ void send_ip(struct in_addr dst_ip,unsigned char protocol,unsigned char *payload
 void send_ipip(unsigned char *payload,unsigned short len) {
 	unsigned char buf[buf_sz];
 	struct iphdr l3_header;
-    memcpy(&l3_header,payload,len);
-    l3_header.ttl --;
-	l3_header.check = 0;
-    l3_header.check = in_cksum((unsigned short *)&l3_header,sizeof(l3_header));
-    memcpy(buf,&l3_header,sizeof(l3_header));
-    memcpy(buf+20,payload+20,len-20);
-    send_ip(peer_ip,proto_ipip,buf,len);
+	memcpy(&l3_header,payload,len);
+	if (l3_header.ttl) {
+		l3_header.ttl --;
+		l3_header.check = 0;
+		l3_header.check = in_cksum((unsigned short *)&l3_header,sizeof(l3_header));
+		memcpy(buf,&l3_header,sizeof(l3_header));
+		memcpy(buf+20,payload+20,len-20);
+		send_ip(peer_ip,proto_ipip,buf,len);
+	}
 }
 void receiver() {
 	unsigned char buf[buf_sz];
@@ -311,10 +315,10 @@ int main(int argc,char *argv[]) {
 	right_net.s_addr &= right_net_mask.s_addr;
 	printf("bind_interface = %s\n",bind_interface);
 	printf("peer_ip = %s\n",inet_ntoa(peer_ip));
-    printf("left_net = %s/",inet_ntoa(left_net));
-    printf("%s\n",inet_ntoa(left_net_mask));
-    printf("right_net = %s/",inet_ntoa(right_net));
-    printf("%s\n",inet_ntoa(right_net_mask));
+	printf("left_net = %s/",inet_ntoa(left_net));
+	printf("%s\n",inet_ntoa(left_net_mask));
+	printf("right_net = %s/",inet_ntoa(right_net));
+	printf("%s\n",inet_ntoa(right_net_mask));
 	//init random seed (for random packet id)
 	srand(time(NULL));
 	//init sighandler to avoid unuseable fd after close
@@ -340,7 +344,7 @@ int main(int argc,char *argv[]) {
 	if (ioctl(sock_fd,SIOCGIFHWADDR,&ifstruct) == 0) {
 		memcpy(my_mac,&ifstruct.ifr_addr.sa_data,sizeof(my_mac));
 		printf("local_mac = ");
-        mac_addr(my_mac).print();
+		mac_addr(my_mac).print();
 		/*
 			use different mac_addr is ok, 
 			but some virtual machines will
