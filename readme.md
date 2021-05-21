@@ -87,4 +87,4 @@ Connecting to host 192.168.1.2, port 5201
 iperf Done.
 ```
 
-注：以上测试在AMD Ryzen 2700上的VMWare ESXi虚拟机中进行，测试主机内核为Linux 5.10，TCP拥塞控制算法采用Cubic。
+注：以上测试在AMD Ryzen 2700上的VMWare ESXi虚拟机中进行，测试主机内核为Linux 5.10，TCP拥塞控制算法采用Cubic。而若改用BBR后带宽会直接低于1Mbps。而使用iperf3 UDP模式测试，即使带宽拉到1Gbps丢包率也仅有10%。
