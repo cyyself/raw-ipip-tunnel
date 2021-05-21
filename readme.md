@@ -29,14 +29,14 @@ ip route add 192.168.1.0/24 via 192.168.0.1 src 192.168.0.2
 
 ```bash
 ip addr add 192.168.0.1/24 dev ens192
-./ipip-tunnel -l ens192 -peer 172.16.0.3
+./ipip-tunnel -l ens192 -peer 172.16.0.4
 ```
 
 - PC3
 
 ```bash
 ip addr add 192.168.1.1/24 dev ens192
-./ipip-tunnel -l ens192 -peer 172.16.0.2 -left 192.168.1.0 -right 192.168.0.0
+./ipip-tunnel -l ens192 -peer 172.16.0.3 -left 192.168.1.0 -right 192.168.0.0
 ```
 
 - PC4
